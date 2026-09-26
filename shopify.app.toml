@@ -2,7 +2,7 @@
 
 client_id = "35783ffed69ae8e466d44b2ea63e7144"
 name = "Low Stock Alert"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://lowstockalert-shopify.vercel.app"
 embedded = true
 
 [access_scopes]
@@ -10,7 +10,7 @@ embedded = true
 scopes = "read_inventory,read_locations,read_products"
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [ "https://lowstockalert-shopify.vercel.app/auth/callback" ]
 
 [webhooks]
 api_version = "2024-10"
@@ -24,5 +24,4 @@ api_version = "2024-10"
   uri = "/webhooks"
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true
