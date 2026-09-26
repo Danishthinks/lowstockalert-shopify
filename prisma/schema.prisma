@@ -1,0 +1,97 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+/// Official Shopify session storage model specification
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+
+  @@index([shop])
+}
+
+/// Store-level configuration, billing subscription, and quota usage
+model StoreSettings {
+  id                   String             @id @default(cuid())
+  shop                 String             @unique
+  activePlan           String             @default("FREE")
+  globalThreshold      Int                @default(5)
+  alertCountThisMonth  Int                @default(0)
+  alertCountResetAt    DateTime           @default(now())
+  ownerEmail           String?
+  subscriptionChargeId String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  // Relationships
+  productThresholds    ProductThreshold[]
+  alertHistories       AlertHistory[]
+
+  @@index([shop])
+}
+
+/// Variant-specific overrides and vendor routing
+model ProductThreshold {
+  id              String        @id @default(cuid())
+  shop            String
+  store           StoreSettings @relation(fields: [shop], references: [shop], onDelete: Cascade)
+  
+  productId       String
+  variantId       String
+  inventoryItemId String?
+  
+  productTitle    String?
+  variantTitle    String?
+  customThreshold Int
+  vendorEmail     String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([shop, variantId])
+  @@index([shop, inventoryItemId])
+  @@index([shop])
+}
+
+/// Audit trail and quota enforcement ledger
+model AlertHistory {
+  id              String        @id @default(cuid())
+  shop            String
+  store           StoreSettings @relation(fields: [shop], references: [shop], onDelete: Cascade)
+  
+  productId       String
+  variantId       String
+  inventoryItemId String?
+  productTitle    String?
+  variantTitle    String?
+  
+  stockLevel      Int
+  threshold       Int
+  recipientEmails String        @default("")
+  tier            String        @default("FREE")
+  status          String        @default("SENT")
+  errorMessage    String?
+  
+  sentAt          DateTime      @default(now())
+
+  @@index([shop, sentAt])
+  @@index([shop, productId])
+}
