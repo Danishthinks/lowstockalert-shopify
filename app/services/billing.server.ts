@@ -154,7 +154,14 @@ export async function syncStoreSubscription({
 }): Promise<PlanTier> {
   try {
     const response = await admin.graphql(GET_ACTIVE_SUBSCRIPTIONS_QUERY);
-    const data = await response.json();
+    const data = (await response.json()) as any;
+
+    if (data?.errors) {
+      console.error(`[Billing] syncStoreSubscription GraphQL errors for ${shop}:`, data.errors);
+      const existing = await prisma.storeSettings.findUnique({ where: { shop } });
+      return (existing?.activePlan as PlanTier) || PlanTier.FREE;
+    }
+
     const activeSubscriptions = data.data?.currentAppInstallation?.activeSubscriptions || [];
 
     let currentTier: PlanTier = PlanTier.FREE;
@@ -240,7 +247,18 @@ export async function createSubscriptionPlan({
     },
   });
 
-  const body = await response.json();
+  const body = (await response.json()) as any;
+
+  if (body.errors) {
+    const errorMsg = Array.isArray(body.errors)
+      ? body.errors.map((e: { message?: string }) => e.message || JSON.stringify(e)).join(", ")
+      : typeof body.errors === "string"
+      ? body.errors
+      : JSON.stringify(body.errors);
+    console.error(`[Billing] appSubscriptionCreate GraphQL errors for ${shop}:`, errorMsg);
+    return { error: errorMsg };
+  }
+
   const result = body.data?.appSubscriptionCreate;
 
   if (result?.userErrors?.length) {

@@ -16,18 +16,34 @@ import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { authenticateAdminWithDevFallback } from "../auth-helper.server";
 import prisma from "../db.server";
+import { syncStoreSubscription } from "../services/billing.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { isMock, session } = await authenticateAdminWithDevFallback(request);
+  const { isMock, session, admin } = await authenticateAdminWithDevFallback(request);
+  const url = new URL(request.url);
+  const welcome = url.searchParams.get("welcome");
+  const chargeId = url.searchParams.get("charge_id");
+
+  // If returning from Shopify subscription approval, immediately sync charge & mark onboarding complete
+  if (welcome === "upgraded" || chargeId) {
+    try {
+      await syncStoreSubscription({ admin, shop: session.shop });
+    } catch (err) {
+      console.warn("[App Loader] syncStoreSubscription error:", err);
+    }
+    await prisma.storeSettings.updateMany({
+      where: { shop: session.shop },
+      data: { hasCompletedOnboarding: true },
+    });
+  }
 
   // If first-time merchant install, route to plan selection onboarding
   const store = await prisma.storeSettings.findUnique({
     where: { shop: session.shop },
   });
 
-  const url = new URL(request.url);
   if (store && !store.hasCompletedOnboarding && !url.pathname.includes("/app/pricing")) {
     return redirect(`/app/pricing?onboarding=true`);
   }
