@@ -203,7 +203,7 @@ export async function createSubscriptionPlan({
   shop,
   plan,
   returnUrl,
-  isTest = process.env.NODE_ENV !== "production",
+  isTest = process.env.SHOPIFY_BILLING_TEST === "false" ? false : true,
 }: {
   admin: AdminApiContext;
   shop: string;
@@ -244,7 +244,9 @@ export async function createSubscriptionPlan({
   const result = body.data?.appSubscriptionCreate;
 
   if (result?.userErrors?.length) {
-    return { error: result.userErrors.map((e: { message: string }) => e.message).join(", ") };
+    const errorMsg = result.userErrors.map((e: { message: string }) => e.message).join(", ");
+    console.error(`[Billing] appSubscriptionCreate failed for ${shop}:`, errorMsg);
+    return { error: errorMsg };
   }
 
   return { confirmationUrl: result?.confirmationUrl };

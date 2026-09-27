@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { useActionData, useLoaderData, useNavigation, useSubmit } from "@remix-run/react";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Page,
   Layout,
@@ -101,8 +103,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return json<ActionResponse>({ error: error || "Unable to initiate subscription charge." }, { status: 400 });
   }
 
-  // Redirect merchant outside the iframe to Shopify's subscription confirmation screen
-  return redirect(confirmationUrl, { target: "_top" } as never);
+  // Return confirmationUrl to client for App Bridge top-level parent window navigation
+  return json<ActionResponse>({ confirmationUrl });
 };
 
 export default function PricingPage() {
@@ -111,8 +113,18 @@ export default function PricingPage() {
   const actionData = useActionData<ActionResponse>();
   const navigation = useNavigation();
   const submit = useSubmit();
+  const shopify = useAppBridge();
 
-  const isSubmitting = navigation.state === "submitting";
+  const isSubmitting = navigation.state === "submitting" || Boolean(actionData?.confirmationUrl);
+
+  useEffect(() => {
+    if (actionData?.confirmationUrl) {
+      if (typeof window !== "undefined") {
+        // App Bridge intercepts window.open(..., '_top') to escape iframe and open Shopify approval screen
+        window.open(actionData.confirmationUrl, "_top");
+      }
+    }
+  }, [actionData]);
 
   const handlePlanSelect = (plan: PlanTier) => {
     const formData = new FormData();
