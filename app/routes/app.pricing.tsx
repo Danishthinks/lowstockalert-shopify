@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { useActionData, useLoaderData, useNavigation, useSubmit } from "@remix-run/react";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Page,
   Layout,
@@ -113,7 +112,6 @@ export default function PricingPage() {
   const actionData = useActionData<ActionResponse>();
   const navigation = useNavigation();
   const submit = useSubmit();
-  const shopify = useAppBridge();
 
   const isSubmitting = navigation.state === "submitting" || Boolean(actionData?.confirmationUrl);
 
