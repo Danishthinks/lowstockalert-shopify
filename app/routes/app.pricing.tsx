@@ -34,9 +34,19 @@ interface ActionResponse {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticateAdminWithDevFallback(request);
   const shop = session.shop;
+  const url = new URL(request.url);
+  const isOnboarding = url.searchParams.get("onboarding") === "true";
 
   // Sync with Shopify to get verified active charge state
   const activePlan = await syncStoreSubscription({ admin, shop });
+
+  // If a paid charge is confirmed, mark onboarding completed automatically
+  if (activePlan !== PlanTier.FREE) {
+    await prisma.storeSettings.updateMany({
+      where: { shop },
+      data: { hasCompletedOnboarding: true },
+    });
+  }
 
   const store = await prisma.storeSettings.findUnique({
     where: { shop },
@@ -47,6 +57,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     alertCountThisMonth: store?.alertCountThisMonth ?? 0,
     maxFreeAlerts: 50,
     plans: PLANS,
+    isOnboarding: isOnboarding || !store?.hasCompletedOnboarding,
   });
 };
 
@@ -62,12 +73,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const url = new URL(request.url);
-  const returnUrl = `${url.origin}/app/pricing`;
 
   if (targetPlan === PlanTier.FREE) {
     await cancelSubscriptionPlan({ admin, shop });
-    return redirect("/app/pricing");
+    // Mark onboarding complete and set plan to FREE
+    await prisma.storeSettings.updateMany({
+      where: { shop },
+      data: {
+        activePlan: PlanTier.FREE,
+        hasCompletedOnboarding: true,
+      },
+    });
+    return redirect("/app?welcome=free");
   }
+
+  // If selecting a paid plan, return to dashboard with upgraded celebration
+  const returnUrl = `${url.origin}/app?welcome=upgraded&tier=${targetPlan}`;
 
   const { confirmationUrl, error } = await createSubscriptionPlan({
     admin,
@@ -85,7 +106,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function PricingPage() {
-  const { activePlan, alertCountThisMonth, maxFreeAlerts, plans } =
+  const { activePlan, alertCountThisMonth, maxFreeAlerts, plans, isOnboarding } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<ActionResponse>();
   const navigation = useNavigation();
@@ -103,17 +124,29 @@ export default function PricingPage() {
 
   return (
     <Page
-      title="Plans & Billing"
-      subtitle="Select the tier that fits your store's inventory scale and vendor automation requirements."
+      title={isOnboarding ? "Welcome! Choose Your Plan" : "Plans & Billing"}
+      subtitle={
+        isOnboarding
+          ? "Activate your store by selecting a plan below. You can start completely free ($0/mo) or unlock automated vendor Purchase Orders & multi-location tracking."
+          : "Select the tier that fits your store's inventory scale and vendor automation requirements."
+      }
     >
       <BlockStack gap="500">
+        {isOnboarding && (
+          <Banner title="🎉 Step 1 of 1: Select Your App Plan" tone="success">
+            <Text as="p">
+              Pick your subscription tier below to activate Low Stock Alert for your store. You can start on the <strong>Free Plan ($0/mo)</strong> and upgrade or downgrade anytime!
+            </Text>
+          </Banner>
+        )}
+
         {actionData?.error && (
           <Banner title="Subscription error" tone="critical">
             <p>{actionData.error}</p>
           </Banner>
         )}
 
-        {activePlan === PlanTier.FREE && (
+        {!isOnboarding && activePlan === PlanTier.FREE && (
           <Banner title="Free Tier Usage Status" tone="info">
             <BlockStack gap="200">
               <Text as="p">
@@ -132,9 +165,16 @@ export default function PricingPage() {
         <Layout>
           {planOrder.map((tierKey) => {
             const plan = plans[tierKey];
-            const isCurrent = activePlan === tierKey;
+            const isCurrent = !isOnboarding && activePlan === tierKey;
             const isPro = tierKey === PlanTier.PRO;
             const isStarter = tierKey === PlanTier.STARTER;
+
+            let buttonLabel = `Upgrade to ${plan.title}`;
+            if (isOnboarding) {
+              buttonLabel = tierKey === PlanTier.FREE ? "Activate Free Plan ($0/mo)" : `Select ${plan.title} ($${plan.price}/mo)`;
+            } else if (tierKey === PlanTier.FREE) {
+              buttonLabel = "Downgrade to Free";
+            }
 
             return (
               <Layout.Section variant="oneThird" key={tierKey}>
@@ -187,14 +227,12 @@ export default function PricingPage() {
                       ) : (
                         <Button
                           fullWidth
-                          variant={tierKey !== PlanTier.FREE ? "primary" : "secondary"}
-                          tone={tierKey === PlanTier.FREE ? "critical" : undefined}
+                          variant={tierKey !== PlanTier.FREE ? "primary" : isOnboarding ? "primary" : "secondary"}
+                          tone={!isOnboarding && tierKey === PlanTier.FREE ? "critical" : undefined}
                           loading={isSubmitting}
                           onClick={() => handlePlanSelect(tierKey)}
                         >
-                          {tierKey === PlanTier.FREE
-                            ? "Downgrade to Free"
-                            : `Upgrade to ${plan.title}`}
+                          {buttonLabel}
                         </Button>
                       )}
                     </Box>

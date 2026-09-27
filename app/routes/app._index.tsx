@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, Link } from "@remix-run/react";
@@ -14,14 +15,27 @@ import {
   IndexTable,
   Box,
   Divider,
+  List,
 } from "@shopify/polaris";
 import { authenticateAdminWithDevFallback } from "../auth-helper.server";
 import prisma from "../db.server";
 import { PlanTier } from "../types";
+import { syncStoreSubscription } from "../services/billing.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticateAdminWithDevFallback(request);
+  const { session, admin } = await authenticateAdminWithDevFallback(request);
   const shop = session.shop;
+  const url = new URL(request.url);
+  const welcome = url.searchParams.get("welcome");
+
+  // Sync subscription if returning from upgrade
+  if (welcome === "upgraded") {
+    await syncStoreSubscription({ admin, shop });
+    await prisma.storeSettings.updateMany({
+      where: { shop },
+      data: { hasCompletedOnboarding: true },
+    });
+  }
 
   const store = await prisma.storeSettings.findUnique({
     where: { shop },
@@ -69,6 +83,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     globalThreshold: store?.globalThreshold ?? 5,
     alertCountThisMonth: store?.alertCountThisMonth ?? 0,
     customThresholdCount,
+    welcome,
     recentAlerts: recentAlerts.map((a) => ({
       id: a.id,
       productTitle: a.productTitle || "Item",
@@ -86,7 +101,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function DashboardIndex() {
   const data = useLoaderData<typeof loader>();
   const isPro = data.activePlan === PlanTier.PRO;
+  const isPaid = data.activePlan === PlanTier.STARTER || data.activePlan === PlanTier.PRO;
   const isFree = data.activePlan === PlanTier.FREE;
+
+  const [guideDismissed, setGuideDismissed] = useState(false);
 
   return (
     <Page
@@ -101,10 +119,41 @@ export default function DashboardIndex() {
           content: "Store Settings",
           url: "/app/settings",
         },
+        {
+          content: "Plans & Billing",
+          url: "/app/pricing",
+        },
       ]}
     >
       <BlockStack gap="500">
-        {!data.ownerEmail || data.ownerEmail === "Not configured" ? (
+        {/* Welcome Celebration Banners */}
+        {data.welcome === "free" && !guideDismissed && (
+          <Banner
+            title="🎉 Welcome to Low Stock Alert! (Free Plan Active)"
+            tone="success"
+            onDismiss={() => setGuideDismissed(true)}
+          >
+            <p>
+              Your store is now set up on the <strong>Free Tier</strong> (50 free alert emails per month).
+              Follow the 3-step Quick Start Guide below to configure your alert email and thresholds in under 2 minutes!
+            </p>
+          </Banner>
+        )}
+
+        {data.welcome === "upgraded" && !guideDismissed && (
+          <Banner
+            title={`⭐ Welcome to the ${data.activePlan} Tier!`}
+            tone="success"
+            onDismiss={() => setGuideDismissed(true)}
+          >
+            <p>
+              Your subscription upgrade was successful! Your store now has access to all {data.activePlan} features. Check out your unlocked features guide below.
+            </p>
+          </Banner>
+        )}
+
+        {/* Action Required: Email Warning */}
+        {(!data.ownerEmail || data.ownerEmail === "Not configured") && (
           <Banner
             title="Action Required: Setup Alert Email"
             tone="warning"
@@ -112,7 +161,103 @@ export default function DashboardIndex() {
           >
             <p>Please enter your store owner notification email in Settings to receive alerts when inventory drops.</p>
           </Banner>
-        ) : null}
+        )}
+
+        {/* Quick Start Guide (Simple Words for All Merchants) */}
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack align="space-between" blockAlign="center">
+              <InlineStack gap="200" blockAlign="center">
+                <Text as="h2" variant="headingMd">
+                  📖 Quick Start Guide: How to Use Low Stock Alert
+                </Text>
+                <Badge tone="info">Simple 3-Step Setup</Badge>
+              </InlineStack>
+            </InlineStack>
+            <Divider />
+
+            <Layout>
+              <Layout.Section variant="oneThird">
+                <BlockStack gap="200">
+                  <Text as="h3" variant="headingSm" fontWeight="bold">
+                    1️⃣ Set Alert Email &amp; Threshold
+                  </Text>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Go to <strong><Link to="/app/settings">Store Settings</Link></strong> and enter your email address. Then set your default minimum stock level (e.g. alert me when any item drops to 5 or fewer units).
+                  </Text>
+                </BlockStack>
+              </Layout.Section>
+
+              <Layout.Section variant="oneThird">
+                <BlockStack gap="200">
+                  <Text as="h3" variant="headingSm" fontWeight="bold">
+                    2️⃣ Customize Products &amp; Vendors
+                  </Text>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Open <strong><Link to="/app/products">Product Thresholds</Link></strong> to view your catalog. You can set specific custom thresholds for fast-selling items, or add vendor emails for automated restock orders.
+                  </Text>
+                </BlockStack>
+              </Layout.Section>
+
+              <Layout.Section variant="oneThird">
+                <BlockStack gap="200">
+                  <Text as="h3" variant="headingSm" fontWeight="bold">
+                    3️⃣ Automatic 24/7 Monitoring
+                  </Text>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    You don't need to keep the app open! Whenever an item sells on your Shopify store, our system detects it in real-time and immediately sends an alert email before you run out of stock.
+                  </Text>
+                </BlockStack>
+              </Layout.Section>
+            </Layout>
+          </BlockStack>
+        </Card>
+
+        {/* Unlocked Features Guide for Starter & Pro Merchants */}
+        {isPaid && (
+          <Card>
+            <BlockStack gap="300">
+              <InlineStack align="space-between" blockAlign="center">
+                <InlineStack gap="200" blockAlign="center">
+                  <Text as="h2" variant="headingMd">
+                    🚀 {data.activePlan} Tier Unlocked Superpowers
+                  </Text>
+                  <Badge tone="success">Active Plan</Badge>
+                </InlineStack>
+              </InlineStack>
+              <Divider />
+
+              <BlockStack gap="200">
+                <Text as="p" variant="bodyMd">
+                  Your store is running on the <strong>{data.activePlan} Plan</strong>. Here is how to use your unlocked features:
+                </Text>
+
+                <List type="bullet">
+                  <List.Item>
+                    <strong>Automated Vendor Purchase Orders (PO):</strong> In the{" "}
+                    <strong><Link to="/app/products">Product Thresholds</Link></strong> tab, click "Edit" on any product and enter your supplier/vendor's email address. When that product reaches low stock, an automated Purchase Order email is sent directly to your vendor to replenish inventory!
+                  </List.Item>
+                  <List.Item>
+                    <strong>Unlimited Monthly Alerts:</strong> Your alerts are never capped or restricted. All stock changes are delivered instantly 24/7.
+                  </List.Item>
+                  <List.Item>
+                    <strong>Clean White-Label Emails:</strong> Your alert emails are sent with clean, professional formatting without any promotional watermarks.
+                  </List.Item>
+                  {isPro && (
+                    <>
+                      <List.Item>
+                        <strong>Multi-Location Inventory Tracking:</strong> Stock is tracked across all your physical store locations and warehouses independently so you know exactly which branch needs restocking.
+                      </List.Item>
+                      <List.Item>
+                        <strong>Frequent Stockout Analytics:</strong> The analytics panel below shows you which items run out of stock most frequently so you can optimize reordering schedules.
+                      </List.Item>
+                    </>
+                  )}
+                </List>
+              </BlockStack>
+            </BlockStack>
+          </Card>
+        )}
 
         {/* Metric Summary Cards */}
         <Layout>
@@ -127,7 +272,7 @@ export default function DashboardIndex() {
                     {data.activePlan}
                   </Text>
                   <Button url="/app/pricing" size="slim">
-                    Manage
+                    Manage Plan
                   </Button>
                 </InlineStack>
                 <Text as="p" variant="bodyXs" tone="subdued">
@@ -183,7 +328,7 @@ export default function DashboardIndex() {
                     Catalog items with the highest frequency of inventory depletion alerts.
                   </Text>
                 </BlockStack>
-                <Badge tone="magic">Pro Feature</Badge>
+                <Badge tone="magic">Pro Feature Active</Badge>
               </InlineStack>
 
               <Divider />

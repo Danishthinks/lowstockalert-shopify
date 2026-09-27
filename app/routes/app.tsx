@@ -1,5 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useRouteError, useLocation } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider as ShopifyAppProvider } from "@shopify/shopify-app-remix/react";
@@ -15,11 +15,22 @@ import polarisTranslations from "@shopify/polaris/locales/en.json";
 import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { authenticateAdminWithDevFallback } from "../auth-helper.server";
+import prisma from "../db.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { isMock, session } = await authenticateAdminWithDevFallback(request);
+
+  // If first-time merchant install, route to plan selection onboarding
+  const store = await prisma.storeSettings.findUnique({
+    where: { shop: session.shop },
+  });
+
+  const url = new URL(request.url);
+  if (store && !store.hasCompletedOnboarding && !url.pathname.includes("/app/pricing")) {
+    return redirect(`/app/pricing?onboarding=true`);
+  }
 
   return json({
     apiKey: process.env.SHOPIFY_API_KEY || "",
@@ -75,9 +86,6 @@ export default function App() {
                 variant={location.pathname.startsWith("/app/pricing") ? "primary" : "tertiary"}
               >
                 Plans &amp; Billing
-              </Button>
-              <Button url="/" variant="secondary">
-                🧪 Simulator
               </Button>
             </InlineStack>
           </InlineStack>
