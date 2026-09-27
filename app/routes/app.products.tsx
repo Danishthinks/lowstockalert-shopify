@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useActionData, useLoaderData, useNavigation, useSubmit } from "@remix-run/react";
+import { useActionData, useLoaderData, useNavigation, useSubmit, useRouteError, isRouteErrorResponse } from "@remix-run/react";
 import {
   Page,
   Card,
@@ -83,42 +83,53 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const overridesMap = new Map(overrides.map((o) => [o.variantId, o]));
 
-  // 3. Fetch products from Shopify GraphQL
-  const response = await admin.graphql(PRODUCTS_QUERY, { variables: { first: 50 } });
-  const data = await response.json();
-  const products = data.data?.products?.nodes || [];
-
-  // 4. Flatten products and variants into a high-performance table view
+  // 3. Fetch products from Shopify GraphQL with defensive resilience
   const rows: VariantRow[] = [];
+  let fetchError: string | null = null;
 
-  for (const product of products) {
-    const productTitle = product.title;
-    const vendor = product.vendor || "No Vendor";
-    const productId = product.id;
+  try {
+    const response = await admin.graphql(PRODUCTS_QUERY, { variables: { first: 50 } });
+    const data = (await response.json()) as any;
 
-    for (const variant of product.variants?.nodes || []) {
-      const variantId = variant.id;
-      const override = overridesMap.get(variantId);
-      const isCustom = Boolean(override);
+    if (data.errors && data.errors.length > 0) {
+      console.warn("[app.products] GraphQL errors returned:", data.errors);
+      fetchError = data.errors[0]?.message || "Shopify API returned an error";
+    } else {
+      const products = data.data?.products?.nodes || [];
+      for (const product of products) {
+        const productTitle = product.title;
+        const vendor = product.vendor || "No Vendor";
+        const productId = product.id;
 
-      rows.push({
-        id: variantId,
-        productId,
-        productTitle,
-        variantTitle: variant.title === "Default Title" ? "" : variant.title,
-        vendor,
-        inventoryItemId: variant.inventoryItem?.id,
-        inventoryQuantity: variant.inventoryQuantity ?? 0,
-        customThreshold: override ? override.customThreshold : null,
-        effectiveThreshold: override ? override.customThreshold : globalThreshold,
-        vendorEmail: override?.vendorEmail || "",
-        isCustom,
-      });
+        for (const variant of product.variants?.nodes || []) {
+          const variantId = variant.id;
+          const override = overridesMap.get(variantId);
+          const isCustom = Boolean(override);
+
+          rows.push({
+            id: variantId,
+            productId,
+            productTitle,
+            variantTitle: variant.title === "Default Title" ? "" : variant.title,
+            vendor,
+            inventoryItemId: variant.inventoryItem?.id,
+            inventoryQuantity: variant.inventoryQuantity ?? 0,
+            customThreshold: override ? override.customThreshold : null,
+            effectiveThreshold: override ? override.customThreshold : globalThreshold,
+            vendorEmail: override?.vendorEmail || "",
+            isCustom,
+          });
+        }
+      }
     }
+  } catch (err: any) {
+    console.error("[app.products] Caught loader error fetching products:", err);
+    fetchError = err?.message || "Failed to communicate with Shopify API";
   }
 
   return json({
     rows,
+    fetchError,
     activePlan,
     ownerEmail: store?.ownerEmail || "smartstock779@gmail.com",
     globalThreshold,
@@ -208,7 +219,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function ProductsPage() {
-  const { rows, activePlan, globalThreshold, isFeatureLocked, ownerEmail, isDev } = useLoaderData<typeof loader>();
+  const { rows, fetchError, activePlan, globalThreshold, isFeatureLocked, ownerEmail, isDev } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionResponse>();
   const navigation = useNavigation();
   const submit = useSubmit();
@@ -374,6 +385,17 @@ export default function ProductsPage() {
       subtitle="Define per-variant low-stock triggers and automated vendor alert dispatch."
     >
       <BlockStack gap="400">
+        {fetchError && (
+          <Banner title="Live Catalog Sync Notice" tone="warning">
+            <p>{fetchError}</p>
+            <div style={{ marginTop: "0.5rem" }}>
+              <Button onClick={() => window.location.reload()} size="slim">
+                Retry Sync
+              </Button>
+            </div>
+          </Banner>
+        )}
+
         {actionData?.error && (
           <Banner title="Operation blocked" tone="critical">
             <p>{actionData.error}</p>
@@ -519,6 +541,31 @@ export default function ProductsPage() {
           </Modal.Section>
         </Modal>
       )}
+    </Page>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  console.error("[ProductsPage ErrorBoundary Caught]:", error);
+
+  let message = "Unable to load products at this moment.";
+  if (isRouteErrorResponse(error)) {
+    message = typeof error.data === "string" ? error.data : error.data?.message || "Communication error with store catalog";
+  } else if (error instanceof Error) {
+    message = error.message;
+  }
+
+  return (
+    <Page title="Product Inventory Thresholds">
+      <Banner title="Unable to load product list" tone="warning">
+        <p>{message}</p>
+        <div style={{ marginTop: "1rem" }}>
+          <Button onClick={() => window.location.reload()} variant="primary">
+            Retry Loading
+          </Button>
+        </div>
+      </Banner>
     </Page>
   );
 }

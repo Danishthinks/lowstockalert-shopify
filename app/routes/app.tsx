@@ -1,6 +1,6 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Link, Outlet, useLoaderData, useRouteError, useLocation } from "@remix-run/react";
+import { Link, Outlet, useLoaderData, useRouteError, useLocation, useNavigate, isRouteErrorResponse } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider as ShopifyAppProvider } from "@shopify/shopify-app-remix/react";
 import {
@@ -10,6 +10,7 @@ import {
   Text,
   Badge,
   Button,
+  Banner,
 } from "@shopify/polaris";
 import polarisTranslations from "@shopify/polaris/locales/en.json";
 import { NavMenu } from "@shopify/app-bridge-react";
@@ -58,6 +59,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function App() {
   const { apiKey, isMock, shop } = useLoaderData<typeof loader>();
   const location = useLocation();
+  const navigate = useNavigate();
 
   if (isMock) {
     return (
@@ -80,25 +82,25 @@ export default function App() {
 
             <InlineStack gap="200">
               <Button
-                url="/app"
+                onClick={() => navigate("/app")}
                 variant={location.pathname === "/app" ? "primary" : "tertiary"}
               >
                 Dashboard
               </Button>
               <Button
-                url="/app/products"
+                onClick={() => navigate("/app/products")}
                 variant={location.pathname.startsWith("/app/products") ? "primary" : "tertiary"}
               >
                 Products &amp; Thresholds
               </Button>
               <Button
-                url="/app/settings"
+                onClick={() => navigate("/app/settings")}
                 variant={location.pathname.startsWith("/app/settings") ? "primary" : "tertiary"}
               >
                 Settings
               </Button>
               <Button
-                url="/app/pricing"
+                onClick={() => navigate("/app/pricing")}
                 variant={location.pathname.startsWith("/app/pricing") ? "primary" : "tertiary"}
               >
                 Plans &amp; Billing
@@ -137,25 +139,25 @@ export default function App() {
 
           <InlineStack gap="200">
             <Button
-              url="/app"
+              onClick={() => navigate("/app")}
               variant={location.pathname === "/app" ? "primary" : "tertiary"}
             >
               📊 Dashboard
             </Button>
             <Button
-              url="/app/products"
+              onClick={() => navigate("/app/products")}
               variant={location.pathname.startsWith("/app/products") ? "primary" : "tertiary"}
             >
               📦 Product Thresholds
             </Button>
             <Button
-              url="/app/settings"
+              onClick={() => navigate("/app/settings")}
               variant={location.pathname.startsWith("/app/settings") ? "primary" : "tertiary"}
             >
               ⚙️ Settings
             </Button>
             <Button
-              url="/app/pricing"
+              onClick={() => navigate("/app/pricing")}
               variant={location.pathname.startsWith("/app/pricing") ? "primary" : "tertiary"}
             >
               💳 Plans &amp; Billing
@@ -168,9 +170,32 @@ export default function App() {
   );
 }
 
-// Error boundary for standard Shopify Remix app error formatting
+// Error boundary with clean Polaris UI preventing raw [object Object] output
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  const error = useRouteError();
+  console.error("[App ErrorBoundary Caught Error]:", error);
+
+  let message = "An unexpected error occurred while loading this page.";
+  if (isRouteErrorResponse(error)) {
+    message = typeof error.data === "string" ? error.data : error.data?.message || JSON.stringify(error.data);
+  } else if (error instanceof Error) {
+    message = error.message;
+  }
+
+  return (
+    <PolarisAppProvider i18n={polarisTranslations}>
+      <Box padding="500">
+        <Banner title="Application Notice" tone="warning">
+          <p>{message}</p>
+          <div style={{ marginTop: "1rem" }}>
+            <Button onClick={() => window.location.reload()} variant="primary">
+              Reload Page
+            </Button>
+          </div>
+        </Banner>
+      </Box>
+    </PolarisAppProvider>
+  );
 }
 
 export const headers: HeadersFunction = (headersArgs) => {
