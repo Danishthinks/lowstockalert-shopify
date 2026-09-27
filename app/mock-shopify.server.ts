@@ -199,7 +199,7 @@ export function createMockAdmin(shop: string = MOCK_SHOP): AdminApiContext {
 
       // 4. Mock AppSubscriptionCreate
       if (query.includes("AppSubscriptionCreate")) {
-        const name = (options?.variables?.name as string) || "";
+        const name = ((options?.variables?.name as string) || "").toUpperCase();
         const returnUrl = (options?.variables?.returnUrl as string) || "/app/pricing";
         let tier: PlanTier = PlanTier.FREE;
         if (name.includes("PRO")) tier = PlanTier.PRO;
@@ -209,15 +209,18 @@ export function createMockAdmin(shop: string = MOCK_SHOP): AdminApiContext {
           where: { shop },
           update: {
             activePlan: tier,
+            hasCompletedOnboarding: true,
             subscriptionChargeId: "gid://shopify/AppSubscription/demo-sub-gid",
           },
           create: {
             shop,
             activePlan: tier,
+            hasCompletedOnboarding: true,
             subscriptionChargeId: "gid://shopify/AppSubscription/demo-sub-gid",
           },
         });
 
+        const separator = returnUrl.includes("?") ? "&" : "?";
         return new Response(
           JSON.stringify({
             data: {
@@ -226,7 +229,7 @@ export function createMockAdmin(shop: string = MOCK_SHOP): AdminApiContext {
                   id: "gid://shopify/AppSubscription/demo-sub-gid",
                   status: "ACTIVE",
                 },
-                confirmationUrl: `${returnUrl}?planActivated=${tier}`,
+                confirmationUrl: `${returnUrl}${separator}planActivated=${tier}`,
                 userErrors: [],
               },
             },

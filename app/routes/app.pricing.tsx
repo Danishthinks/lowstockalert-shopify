@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { useActionData, useLoaderData, useNavigation, useSubmit } from "@remix-run/react";
+import { useFetcher, useLoaderData } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -73,7 +73,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return json<ActionResponse>({ error: "Invalid subscription plan selected." }, { status: 400 });
   }
 
-  const url = new URL(request.url);
+  const storeName = shop.replace(".myshopify.com", "");
+  const apiKey =
+    process.env.SHOPIFY_API_KEY && process.env.SHOPIFY_API_KEY !== "development_api_key"
+      ? process.env.SHOPIFY_API_KEY
+      : "35783ffed69ae8e466d44b2ea63e7144";
 
   if (targetPlan === PlanTier.FREE) {
     await cancelSubscriptionPlan({ admin, shop });
@@ -85,11 +89,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         hasCompletedOnboarding: true,
       },
     });
-    return redirect("/app?welcome=free");
+    // Embedded return URL keeps merchant inside Shopify admin iframe
+    const embeddedFreeUrl = `https://admin.shopify.com/store/${storeName}/apps/${apiKey}/app?welcome=free`;
+    return json<ActionResponse>({ confirmationUrl: embeddedFreeUrl });
   }
 
-  // If selecting a paid plan, return to dashboard with upgraded celebration
-  const returnUrl = `${url.origin}/app?welcome=upgraded&tier=${targetPlan}`;
+  // If selecting a paid plan, return directly into Shopify Admin embedded app
+  const returnUrl = `https://admin.shopify.com/store/${storeName}/apps/${apiKey}/app?welcome=upgraded&tier=${targetPlan}`;
 
   const { confirmationUrl, error } = await createSubscriptionPlan({
     admin,
@@ -109,11 +115,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function PricingPage() {
   const { activePlan, alertCountThisMonth, maxFreeAlerts, plans, isOnboarding } =
     useLoaderData<typeof loader>();
-  const actionData = useActionData<ActionResponse>();
-  const navigation = useNavigation();
-  const submit = useSubmit();
+  const fetcher = useFetcher<ActionResponse>();
+  const actionData = fetcher.data;
 
-  const isSubmitting = navigation.state === "submitting" || Boolean(actionData?.confirmationUrl);
+  const isSubmitting = fetcher.state === "submitting" || Boolean(actionData?.confirmationUrl);
 
   useEffect(() => {
     if (actionData?.confirmationUrl) {
@@ -127,7 +132,7 @@ export default function PricingPage() {
   const handlePlanSelect = (plan: PlanTier) => {
     const formData = new FormData();
     formData.append("plan", plan);
-    submit(formData, { method: "POST" });
+    fetcher.submit(formData, { method: "POST" });
   };
 
   const planOrder: PlanTier[] = [PlanTier.FREE, PlanTier.STARTER, PlanTier.PRO];

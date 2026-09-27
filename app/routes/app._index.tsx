@@ -28,8 +28,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const welcome = url.searchParams.get("welcome");
 
+  const chargeId = url.searchParams.get("charge_id");
+
   // Sync subscription if returning from upgrade
-  if (welcome === "upgraded") {
+  if (welcome === "upgraded" || chargeId) {
     await syncStoreSubscription({ admin, shop });
     await prisma.storeSettings.updateMany({
       where: { shop },
