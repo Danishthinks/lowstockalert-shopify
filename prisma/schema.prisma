@@ -38,6 +38,7 @@ model StoreSettings {
   alertCountResetAt    DateTime           @default(now())
   ownerEmail           String?
   subscriptionChargeId String?
+  refreshToken         String?
   hasCompletedOnboarding Boolean          @default(false)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt

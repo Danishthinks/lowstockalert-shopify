@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useActionData, useLoaderData, useNavigation, useSubmit, useRouteError, isRouteErrorResponse } from "@remix-run/react";
+import { useActionData, useLoaderData, useNavigation, useSubmit, useRouteError, isRouteErrorResponse, useRevalidator } from "@remix-run/react";
 import {
   Page,
   Card,
@@ -223,6 +223,7 @@ export default function ProductsPage() {
   const actionData = useActionData<ActionResponse>();
   const navigation = useNavigation();
   const submit = useSubmit();
+  const revalidator = useRevalidator();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVariant, setSelectedVariant] = useState<VariantRow | null>(null);
@@ -389,7 +390,11 @@ export default function ProductsPage() {
           <Banner title="Live Catalog Sync Notice" tone="warning">
             <p>{fetchError}</p>
             <div style={{ marginTop: "0.5rem" }}>
-              <Button onClick={() => window.location.reload()} size="slim">
+              <Button
+                onClick={() => revalidator.revalidate()}
+                loading={revalidator.state === "loading"}
+                size="slim"
+              >
                 Retry Sync
               </Button>
             </div>
@@ -547,6 +552,7 @@ export default function ProductsPage() {
 
 export function ErrorBoundary() {
   const error = useRouteError();
+  const revalidator = useRevalidator();
   console.error("[ProductsPage ErrorBoundary Caught]:", error);
 
   let message = "Unable to load products at this moment.";
@@ -561,7 +567,11 @@ export function ErrorBoundary() {
       <Banner title="Unable to load product list" tone="warning">
         <p>{message}</p>
         <div style={{ marginTop: "1rem" }}>
-          <Button onClick={() => window.location.reload()} variant="primary">
+          <Button
+            onClick={() => revalidator.revalidate()}
+            loading={revalidator.state === "loading"}
+            variant="primary"
+          >
             Retry Loading
           </Button>
         </div>

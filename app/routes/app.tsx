@@ -1,6 +1,6 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Link, Outlet, useLoaderData, useRouteError, useLocation, useNavigate, isRouteErrorResponse } from "@remix-run/react";
+import { Link, Outlet, useLoaderData, useRouteError, useLocation, useNavigate, isRouteErrorResponse, useRevalidator } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider as ShopifyAppProvider } from "@shopify/shopify-app-remix/react";
 import {
@@ -173,6 +173,7 @@ export default function App() {
 // Error boundary with clean Polaris UI preventing raw [object Object] output
 export function ErrorBoundary() {
   const error = useRouteError();
+  const revalidator = useRevalidator();
   console.error("[App ErrorBoundary Caught Error]:", error);
 
   let message = "An unexpected error occurred while loading this page.";
@@ -188,7 +189,11 @@ export function ErrorBoundary() {
         <Banner title="Application Notice" tone="warning">
           <p>{message}</p>
           <div style={{ marginTop: "1rem" }}>
-            <Button onClick={() => window.location.reload()} variant="primary">
+            <Button
+              onClick={() => revalidator.revalidate()}
+              loading={revalidator.state === "loading"}
+              variant="primary"
+            >
               Reload Page
             </Button>
           </div>

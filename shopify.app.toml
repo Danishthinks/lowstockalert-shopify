@@ -5,23 +5,19 @@ name = "Low Stock Alert"
 application_url = "https://lowstockalert-shopify.vercel.app"
 embedded = true
 
+[build]
+automatically_update_urls_on_dev = false
+
+[webhooks]
+api_version = "2024-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks"
+  topics = [ "inventory_levels/update", "app/uninstalled" ]
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_inventory,read_locations,read_products"
 
 [auth]
 redirect_urls = [ "https://lowstockalert-shopify.vercel.app/auth/callback" ]
-
-[webhooks]
-api_version = "2024-10"
-
-  [[webhooks.subscriptions]]
-  topics = [ "inventory_levels/update" ]
-  uri = "/webhooks"
-
-  [[webhooks.subscriptions]]
-  topics = [ "app/uninstalled" ]
-  uri = "/webhooks"
-
-[build]
-automatically_update_urls_on_dev = false
